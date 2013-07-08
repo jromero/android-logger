@@ -1,3 +1,8 @@
+# Android
+bin/
+gen/
+lint.xml
+
 # Eclipse
 .classpath
 .project
