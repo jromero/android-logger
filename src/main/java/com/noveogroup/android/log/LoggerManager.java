@@ -28,9 +28,17 @@ package com.noveogroup.android.log;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import com.noveogroup.android.log.DynamicLogger.TagSpecifier;
+import com.noveogroup.android.log.Logger.Level;
 
 /**
  * THe logger manager.
@@ -57,6 +65,8 @@ import java.util.regex.Pattern;
  */
 public final class LoggerManager {
 
+    private static final int MAX_TAG_LENGTH = 23;
+
     private LoggerManager() {
         throw new UnsupportedOperationException();
     }
@@ -68,8 +78,10 @@ public final class LoggerManager {
     private static final String PROPERTIES_NAME = "android-logger.properties";
     private static final String CONF_ROOT = "root";
     private static final String CONF_LOGGER = "logger.";
-    private static final Pattern CONF_LOGGER_REGEX = Pattern.compile("(.*?):(.*)");
+    private static final Pattern CONF_DYNAMIC_LOGGER_REGEX = Pattern.compile("(.*?):([*]+)$");
+    private static final Pattern CONF_SIMPLE_LOGGER_REGEX = Pattern.compile("(.*?):(.*)");
     private static final Logger.Level CONF_DEFAULT_LEVEL = Logger.Level.VERBOSE;
+    private static final TagSpecifier CONF_DEFAULT_TAG_SPECIFIER = TagSpecifier.SIMPLE_NAME;
     private static final Map<String, Logger> loggerMap;
 
     private static void loadProperties(Properties properties) throws IOException {
@@ -92,15 +104,40 @@ public final class LoggerManager {
     }
 
     private static Logger decodeLogger(String loggerString) {
-        Matcher matcher = CONF_LOGGER_REGEX.matcher(loggerString);
-        if (matcher.matches()) {
-            String levelString = matcher.group(1);
-            String tag = matcher.group(2);
-            if (tag.length() > 23) {
+        Matcher dynamicMatcher = CONF_DYNAMIC_LOGGER_REGEX.matcher(loggerString);
+        Matcher simpleMatcher = CONF_SIMPLE_LOGGER_REGEX.matcher(loggerString);
+        if (dynamicMatcher.matches()) {
+            String levelString = dynamicMatcher.group(1);
+            String tagSpecifierString = dynamicMatcher.group(2);
+
+            TagSpecifier tagSpecifier = CONF_DEFAULT_TAG_SPECIFIER;
+            try {
+                tagSpecifier = TagSpecifier.fromString(tagSpecifierString);
+            } catch (IllegalArgumentException e) {
+                DEFAULT_LOGGER.w(
+                        String.format("Cannot parse '%s' as a tag specifier. Only %s are allowed.",
+                        tagSpecifierString, Arrays.toString(TagSpecifier.values())));
+            }
+
+            Level logLevel = CONF_DEFAULT_LEVEL;
+            try {
+                logLevel = Level.valueOf(levelString);
+            } catch (IllegalArgumentException e) {
+                DEFAULT_LOGGER.w(
+                        String.format("Cannot parse '%s' as logging level. Only %s are allowed.",
+                        levelString, Arrays.toString(Logger.Level.values())));
+            }
+
+            return new DynamicLogger(tagSpecifier, logLevel);
+        } else if (simpleMatcher.matches()) {
+            String levelString = simpleMatcher.group(1);
+            String tag = simpleMatcher.group(2);
+            if (tag.length() > MAX_TAG_LENGTH) {
                 String trimmedTag = tag.substring(0, MAX_LOG_TAG_LENGTH);
                 DEFAULT_LOGGER.w(String.format("Android doesn't supports tags %d characters longer. Tag '%s' will be trimmed to '%s'", MAX_LOG_TAG_LENGTH, tag, trimmedTag));
                 tag = trimmedTag;
             }
+
             try {
                 return new SimpleLogger(tag, Logger.Level.valueOf(levelString));
             } catch (IllegalArgumentException e) {
@@ -108,6 +145,7 @@ public final class LoggerManager {
                         levelString, Arrays.toString(Logger.Level.values())));
                 return new SimpleLogger(loggerString, CONF_DEFAULT_LEVEL);
             }
+
         } else {
             return new SimpleLogger(loggerString, CONF_DEFAULT_LEVEL);
         }
@@ -187,7 +225,31 @@ public final class LoggerManager {
      * @return the {@link Logger} implementation.
      */
     public static Logger getLogger(Class<?> aClass) {
-        return findLogger(aClass == null ? null : aClass.getName());
+        Logger logger = findLogger(aClass == null ? null : aClass.getName());
+
+        if (logger instanceof DynamicLogger) {
+            TagSpecifier tagSpecifier = ((DynamicLogger) logger).getTagSpecifier();
+
+            String tag = "";
+            if (TagSpecifier.SIMPLE_NAME.equals(tagSpecifier)) {
+                tag = Utils.shortenClassName(aClass.getSimpleName(), MAX_TAG_LENGTH);
+            } else if (TagSpecifier.CANONICAL_NAME.equals(tagSpecifier)) {
+                tag = Utils.shortenClassName(aClass.getCanonicalName(), MAX_TAG_LENGTH);
+            }
+
+            return new SimpleLogger(tag, ((DynamicLogger) logger).getLevel());
+        }
+
+        return logger;
+    }
+
+    public static Logger getLogger(Class<?> aClass, String tag) {
+        Logger logger = findLogger(aClass == null ? null : aClass.getName());
+        if (logger instanceof DynamicLogger) {
+            return new SimpleLogger(tag, ((DynamicLogger) logger).getLevel());
+        }
+
+        return logger;
     }
 
     /**
@@ -208,5 +270,4 @@ public final class LoggerManager {
     public static Logger getLogger() {
         return findLogger(Utils.getCallerClassName(LoggerManager.class));
     }
-
 }
