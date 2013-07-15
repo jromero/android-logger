@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+    <target name="-dist-properties" >
+        <property file="dist.properties" />
+        <property name="dist.jar" value="dist/${ant.project.name}-${dist.version}.jar" />
+        
+        <property name="lib.dir" value="libs"/>
+	    <path id="classpath">
+	        <fileset dir="${lib.dir}" includes="**/*.jar"/>
+	    </path>
+	    
+	    <path id="bootclasspath">
+	        <fileset dir="${dist.bootclasspath}" includes="android.jar"/>
+	    </path>
+	    
+    </target>
+    
+    <target name="clean-dist"  depends="-dist-properties">
+        <delete includeemptydirs="true" failonerror="false">
+			<fileset dir="${dist.build.release.dir}" />
+			<fileset dir="${dist.build.docs.dir}" />
+			<fileset dir="${dist.build.classes.dir}" />
+		</delete>
+    </target>
+
+    <target name="package-sources" description="bundle sources in a jar" >
+        
+        <mkdir dir="${dist.build.release.dir}" />
+        
+        <jar
+            basedir="${dist.source.dir}"
+            destfile="${dist.build.release.dir}/${ant.project.name}-${dist.version}-sources.jar" />
+    </target>
+    
+    <target name="generate-docs" description="bundle sources in a jar" depends="-dist-properties" >
+
+        <mkdir dir="${dist.build.docs.dir}" />
+        
+		<javadoc 
+		    packagenames="*"
+			sourcepath="${dist.source.dir}"
+			defaultexcludes="yes"
+			destdir="${dist.build.docs.dir}"
+			author="true"
+			version="true"
+			use="true"
+			windowtitle="${ant.project.name} ${dist.version}">
+			<doctitle><![CDATA[<h1>${ant.project.name}</h1>]]></doctitle>
+			<bottom><![CDATA[<i>Copyright &#169; ${dist.docs.copyrightowner}. All Rights Reserved.</i>]]></bottom>
+			<tag name="todo" scope="all" description="To do:"/>
+		</javadoc>
+		
+		<zip
+            basedir="${dist.build.docs.dir}"
+            destfile="${dist.build.release.dir}/${ant.project.name}-${dist.version}-javadoc.jar"
+            includes="**" />
+    </target>
+        
+    <target name="build-jar"  depends="-dist-properties, clean-dist">
+        <mkdir dir="${dist.build.classes.dir}"/>
+        <javac srcdir="${dist.source.dir}" 
+            destdir="${dist.build.classes.dir}"
+			bootclasspathref="bootclasspath"
+            classpathref="classpath" 
+            includeantruntime="false" />
+        <jar destfile="${dist.build.release.dir}/${ant.project.name}-${dist.version}.jar"
+            basedir="${dist.build.classes.dir}"/>
+    </target>
+
+    <target
+        name="dist"
+        depends="-dist-properties, clean-dist, generate-docs, package-sources, build-jar" >
+
+        <copy
+            file="LICENSE.txt"
+            todir="${dist.build.release.dir}" />
+        
+        <zip
+            basedir="${dist.build.release.dir}"
+            destfile="${dist.dir}/${ant.project.name}-${dist.version}.zip"
+            includes="**" />
+    </target>
+
+</project>
